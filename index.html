@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minuteur Gym Famille</title>
+    <style>
+        body { 
+            margin: 0; 
+            font-family: system-ui, -apple-system, sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            min-height: 100vh; 
+            background-color: #f8f9fa; 
+            transition: background-color 0.2s, color 0.2s; 
+            color: #333;
+            padding: 1rem 0;
+            box-sizing: border-box;
+            overflow-x: hidden;
+        }
+        
+        #setup-wrapper {
+            background: white; 
+            padding: 2rem; 
+            border-radius: 12px; 
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); 
+            max-width: 1000px;
+            width: 95%;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+        }
+        h1 { text-align: center; margin-top: 0; margin-bottom: 2rem; color: #0d6efd; }
+        
+        .setup-columns { display: flex; gap: 2rem; }
+        .col-left { flex: 0 0 35%; }
+        .col-right { flex: 1; max-height: 65vh; overflow-y: auto; padding-right: 10px;}
+        
+        .input-group { margin-bottom: 1.5rem; }
+        label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
+        input, select { 
+            width: 100%; 
+            padding: 0.75rem; 
+            font-size: 1.1rem; 
+            box-sizing: border-box; 
+            border: 1px solid #ccc; 
+            border-radius: 6px; 
+            background-color: white;
+        }
+        
+        .start-btn { 
+            background: #0d6efd; 
+            color: white; 
+            border: none; 
+            padding: 1.2rem; 
+            font-size: 1.5rem; 
+            font-weight: bold;
+            border-radius: 6px; 
+            cursor: pointer; 
+            width: 100%; 
+            transition: opacity 0.2s;
+            margin-top: 1rem;
+        }
+        .start-btn:hover { opacity: 0.9; }
+
+        .secondary-btn {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 0.8rem;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 0.5rem;
+            transition: opacity 0.2s;
+        }
+        .secondary-btn:hover { opacity: 0.9; }
+
+        .grid-selectable { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+        .select-btn {
+            background: #e9ecef; color: #6c757d; border: 2px solid transparent;
+            padding: 0.5rem; border-radius: 8px; cursor: pointer; font-weight: bold;
+            text-align: center; transition: all 0.2s; user-select: none; font-size: 0.9rem;
+        }
+        .select-btn.selected { background: #0d6efd; color: white; border-color: #0a58ca; }
+        .name-btn { flex: 1 1 calc(50% - 0.5rem); padding: 0.8rem; font-size: 1rem;}
+        .exo-btn { flex: 1 1 calc(33% - 0.5rem); }
+        
+        .person-card {
+            background: rgba(0,0,0,0.03);
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .person-card h4 { margin-top: 0; margin-bottom: 0.8rem; color: #0d6efd; text-transform: uppercase; font-size: 1.2rem; display: flex; justify-content: space-between; align-items: center;}
+        
+        .start-point-row {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-top: 1rem; background: white; padding: 0.6rem;
+            border-radius: 6px; border: 1px solid #dee2e6;
+        }
+        .start-point-name { font-weight: bold; font-size: 0.9rem;}
+        .start-point-select { width: 65%; padding: 0.4rem; font-size: 0.9rem; }
+
+        #timer-container { display: none; text-align: center; width: 100%; padding: 1rem; box-sizing: border-box; z-index: 10; flex-direction: column; align-items: center;}
+        
+        #assignments-display {
+            background: rgba(0, 0, 0, 0.1); padding: 1rem; border-radius: 12px;
+            width: 95%; max-width: 600px; margin: 0 auto 1.5rem auto; text-align: left;
+            font-size: 1.3rem; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .assignment-title { text-align: center; font-weight: bold; font-size: 1.1rem; margin-bottom: 0.8rem; opacity: 0.8; letter-spacing: 1px; }
+        .assignment-row { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid rgba(255,255,255,0.2); }
+        .assignment-row:last-child { border-bottom: none; }
+        .person-name { font-weight: bold; width: 35%; text-transform: uppercase; color: yellow;}
+        .exo-name { width: 60%; text-align: right; font-weight: 500; }
+
+        #status { font-size: 7vw; font-weight: bold; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 2px; }
+        #time { font-size: clamp(6rem, 20vw, 15rem); font-weight: bold; line-height: 1; margin: 0; font-variant-numeric: tabular-nums; }
+        #sets { font-size: 1.5rem; margin-top: 1rem; margin-bottom: 2rem; opacity: 0.9; font-weight: bold; }
+
+        /* Écran de Palmarès / Stats */
+        #stats-modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); z-index: 100; justify-content: center; align-items: center;
+        }
+        .modal-content {
+            background: white; padding: 2rem; border-radius: 12px; max-width: 500px; width: 90%;
+            max-height: 80vh; overflow-y: auto; text-align: left;
+        }
+        .modal-content h2 { margin-top: 0; color: #0d6efd; text-align: center; }
+        .stat-line { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #eee; }
+
+        .controls { display: flex; gap: 1rem; justify-content: center; width: 100%; max-width: 500px; margin: 0 auto; }
+        .btn-control { background: rgba(255, 255, 255, 0.2); border: 2px solid white; color: white; padding: 1rem; border-radius: 6px; font-weight: bold; cursor: pointer; flex: 1;}
+        .btn-back { background: transparent; text-decoration: underline; border: none; color: inherit; margin-top: 2rem; margin-bottom: 2rem; font-size: 1rem; opacity: 0.8; font-weight: normal; cursor: pointer;}
+
+        #progress-container { display: none; position: fixed; bottom: 0; left: 0; width: 100%; height: 20px; background: rgba(0, 0, 0, 0.2); z-index: 20;}
+        #progress-bar { height: 100%; width: 100%; background: rgba(255, 255, 255, 0.9); transition: width 1s linear; }
+
+        .confetti {
+            position: fixed; top: -15px; width: 12px; height: 12px; z-index: 9999; pointer-events: none; animation: fall linear forwards;
+        }
+        @keyframes fall { to { transform: translateY(110vh) rotate(720deg); } }
+
+        @media (max-width: 768px) {
+            .setup-columns { flex-direction: column; gap: 1rem; }
+            .col-left { flex: 1; }
+            .col-right { max-height: none; padding-right: 0; border-top: 2px dashed #ccc; padding-top: 1.5rem;}
+            #assignments-display { font-size: 1.1rem; padding: 0.8rem;}
+            #status { font-size: 10vw; }
+            .exo-btn { flex: 1 1 calc(50% - 0.5rem); }
+        }
+
+        body.state-prep { background-color: #0dcaf0; color: #000; }
+        body.state-work { background-color: #198754; color: #fff; }
+        body.state-rest { background-color: #fd7e14; color: #fff; }
+        body.state-done { background-color: #6f42c1; color: #fff; }
+        body.state-prep .btn-control { border-color: #000; color: #000; background: rgba(0,0,0,0.1); }
+        body.state-prep #progress-bar { background: rgba(0, 0, 0, 0.5); }
+        body.state-prep #assignments-display { background: rgba(255, 255, 255, 0.4); border-bottom-color: rgba(0,0,0,0.1); }
+        body.state-prep .assignment-row { border-bottom-color: rgba(0,0,0,0.1); }
+        body.state-prep .person-name { color: #0d6efd; }
+    </style>
+</head>
+<body>
+
+    <div id="setup-wrapper">
+        <h1>Minuteur Famille</h1>
+        
+        <div class="setup-columns">
+            <div class="col-left">
+                <div class="input-group">
+                    <label>Qui participe ?</label>
+                    <div class="grid-selectable" id="names-container">
+                        <div class="select-btn name-btn" onclick="toggleParticipant(this)" data-val="Olivier">Olivier</div>
+                        <div class="select-btn name-btn" onclick="toggleParticipant(this)" data-val="Christelle">Christelle</div>
+                        <div class="select-btn name-btn" onclick="toggleParticipant(this)" data-val="Julia">Julia</div>
+                        <div class="select-btn name-btn" onclick="toggleParticipant(this)" data-val="Coline">Coline</div>
+                        <div class="select-btn name-btn" onclick="toggleParticipant(this)" data-val="Romain">Romain</div>
+                    </div>
+                </div>
+                
+                <div class="input-group">
+                    <label for="work">Durée de l'exercice (sec)</label>
+                    <input type="number" id="work" value="60" min="1">
+                </div>
+                <div class="input-group">
+                    <label for="rest">Durée de la pause (sec)</label>
+                    <input type="number" id="rest" value="15" min="0">
+                </div>
+                <div class="input-group">
+                    <label for="voice-select">Voix du coach</label>
+                    <select id="voice-select"><option value="">Chargement...</option></select>
+                </div>
+            </div>
+
+            <div class="col-right">
+                <label>Programmes Individuels</label>
+                <div style="font-size: 0.9rem; margin-bottom: 1rem; color: #666;">Cochez les exercices souhaités et choisissez le point de départ de chacun :</div>
+                
+                <div id="personal-programs-container"></div>
+            </div>
+        </div>
+        
+        <button class="start-btn" onclick="startTimer()">DÉMARRER LA SÉANCE</button>
+        <button class="secondary-btn" onclick="openStatsModal()">🏆 Voir le palmarès & statistiques</button>
+    </div>
+
+    <!-- MODAL STATS / PALMARES -->
+    <div id="stats-modal">
+        <div class="modal-content">
+            <h2>🏆 Palmarès de la Famille</h2>
+            <div id="stats-body"></div>
+            <button class="start-btn" style="margin-top: 1.5rem; padding: 0.8rem; font-size: 1rem;" onclick="closeStatsModal()">Fermer</button>
+        </div>
+    </div>
+
+    <!-- ÉCRAN DU MINUTEUR -->
+    <div id="timer-container">
+        <div id="assignments-display"></div>
+        <div id="status">Préparation</div>
+        <div id="time">00:10</div>
+        <div id="sets">Série 1 / x</div>
+        
+        <div class="controls" id="control-panel">
+            <button class="btn-control" id="pauseBtn" onclick="togglePause()">PAUSE</button>
+            <button class="btn-control" onclick="resetCurrentTime()">RESET CHRONO</button>
+        </div>
+        
+        <button class="btn-back" onclick="backToSetup()">Quitter et modifier les réglages</button>
+    </div>
+
+    <div id="progress-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <script>
+        const ALL_EXOS = [
+            "Gainage", "Chaise (élast. noire)", "Abdos (levée jambes)", "Bras (élast. bleu clair)", 
+            "Jambes (élast. bleu foncé)", "Abdos (crunch)", "Fentes", "Fessiers (élast. noire)", 
+            "Mollets (marchepieds)", "Pompes"
+        ];
+
+        let workDuration, restDuration, totalRounds;
+        let currentRound = 1;
+        let timeLeft = 0;
+        let totalTimePhase = 1; 
+        let state = 'setup'; 
+        let timerInterval;
+        let audioCtx;
+        let isPaused = false;
+        let wakeLock = null; 
+        let voices = [];
+        let sessionStartTime = null;
+
+        let activeParticipants = [];
+        let personalExos = {}; 
+        let startingPoints = {}; 
+        let workoutSchedule = []; 
+
+        function toggleParticipant(element) {
+            element.classList.toggle('selected');
+            let selectedEls = document.querySelectorAll('#names-container .select-btn.selected');
+            activeParticipants = Array.from(selectedEls).map(el => el.getAttribute('data-val'));
+            localStorage.setItem('gymParticipants', JSON.stringify(activeParticipants));
+            
+            activeParticipants.forEach(person => {
+                if (!personalExos[person]) personalExos[person] = [...ALL_EXOS];
+            });
+            renderPersonalPrograms();
+        }
+
+        function togglePersonalExo(person, exo, btnElement) {
+            let list = personalExos[person];
+            if (list.includes(exo)) {
+                if (list.length === 1) { alert("Il faut garder au moins un exercice !"); return; }
+                list = list.filter(e => e !== exo);
+                btnElement.classList.remove('selected');
+            } else {
+                let newList = [];
+                ALL_EXOS.forEach(e => { if (list.includes(e) || e === exo) newList.push(e); });
+                list = newList;
+                btnElement.classList.add('selected');
+            }
+            personalExos[person] = list;
+            localStorage.setItem('gymPersonalExos', JSON.stringify(personalExos));
+
+            if (!list.includes(startingPoints[person])) {
+                startingPoints[person] = list[0];
+                localStorage.setItem('gymStartingPoints', JSON.stringify(startingPoints));
+            }
+            updateStartSelect(person);
+        }
+
+        function changeStartingPoint(person, exo) {
+            startingPoints[person] = exo;
+            localStorage.setItem('gymStartingPoints', JSON.stringify(startingPoints));
+        }
+
+        function renderPersonalPrograms() {
+            const container = document.getElementById('personal-programs-container');
+            container.innerHTML = '';
+            if (activeParticipants.length === 0) {
+                container.innerHTML = '<div style="text-align:center; padding: 2rem; color: #999;">Sélectionnez un participant à gauche.</div>';
+                return;
+            }
+
+            activeParticipants.forEach((person, index) => {
+                let card = document.createElement('div');
+                card.className = 'person-card';
+                let title = document.createElement('h4');
+                title.innerText = person;
+                card.appendChild(title);
+
+                let grid = document.createElement('div');
+                grid.className = 'grid-selectable';
+                ALL_EXOS.forEach(exo => {
+                    let btn = document.createElement('div');
+                    btn.className = 'select-btn exo-btn';
+                    if (personalExos[person].includes(exo)) btn.classList.add('selected');
+                    btn.innerText = exo;
+                    btn.onclick = () => togglePersonalExo(person, exo, btn);
+                    grid.appendChild(btn);
+                });
+                card.appendChild(grid);
+
+                let startRow = document.createElement('div');
+                startRow.className = 'start-point-row';
+                let startLabel = document.createElement('span');
+                startLabel.className = 'start-point-name';
+                startLabel.innerText = "Départ :";
+                let select = document.createElement('select');
+                select.className = 'start-point-select';
+                select.id = `start-select-${person}`;
+                select.onchange = (e) => changeStartingPoint(person, e.target.value);
+                
+                startRow.appendChild(startLabel);
+                startRow.appendChild(select);
+                card.appendChild(startRow);
+                container.appendChild(card);
+                
+                if (!startingPoints[person] || !personalExos[person].includes(startingPoints[person])) {
+                    startingPoints[person] = personalExos[person][index % personalExos[person].length];
+                }
+                updateStartSelect(person);
+            });
+        }
+
+        function updateStartSelect(person) {
+            let select = document.getElementById(`start-select-${person}`);
+            if (!select) return;
+            select.innerHTML = '';
+            personalExos[person].forEach(exo => {
+                let opt = document.createElement('option');
+                opt.value = exo; opt.innerText = exo;
+                select.appendChild(opt);
+            });
+            select.value = startingPoints[person];
+        }
+
+        function loadData() {
+            if (localStorage.getItem('gymWork')) document.getElementById('work').value = localStorage.getItem('gymWork');
+            if (localStorage.getItem('gymRest')) document.getElementById('rest').value = localStorage.getItem('gymRest');
+            
+            let savedPE = localStorage.getItem('gymPersonalExos');
+            if (savedPE) personalExos = JSON.parse(savedPE);
+            let savedSP = localStorage.getItem('gymStartingPoints');
+            if (savedSP) startingPoints = JSON.parse(savedSP);
+
+            let savedP = localStorage.getItem('gymParticipants');
+            if (savedP) {
+                activeParticipants = JSON.parse(savedP);
+                document.querySelectorAll('#names-container .select-btn').forEach(el => {
+                    if (activeParticipants.includes(el.getAttribute('data-val'))) el.classList.add('selected');
+                });
+            } else {
+                let defaultP = document.querySelector('#names-container .select-btn[data-val="Olivier"]');
+                if(defaultP) { defaultP.classList.add('selected'); activeParticipants = ["Olivier"]; personalExos["Olivier"] = [...ALL_EXOS]; }
+            }
+            renderPersonalPrograms();
+        }
+
+        // --- PALMARÈS / STATS ---
+        function openStatsModal() {
+            const modal = document.getElementById('stats-modal');
+            const body = document.getElementById('stats-body');
+            
+            let totalSessions = parseInt(localStorage.getItem('gymTotalSessions') || '0');
+            let familyStats = JSON.parse(localStorage.getItem('gymFamilyStats') || '{}');
+
+            let html = `<div class="stat-line"><span>Séances totales :</span> <strong>${totalSessions}</strong></div>`;
+            html += `<h3 style="margin-top:1.5rem; color:#333; font-size:1.1rem;">Exercices cumulés par personne :</h3>`;
+            
+            ["Olivier", "Christelle", "Julia", "Coline", "Romain"].forEach(name => {
+                let count = familyStats[name] || 0;
+                html += `<div class="stat-line"><span>${name}</span> <strong>${count} ateliers</strong></div>`;
+            });
+
+            body.innerHTML = html;
+            modal.style.display = 'flex';
+        }
+
+        function closeStatsModal() {
+            document.getElementById('stats-modal').style.display = 'none';
+        }
+
+        function recordSessionStats() {
+            let totalSessions = parseInt(localStorage.getItem('gymTotalSessions') || '0') + 1;
+            localStorage.setItem('gymTotalSessions', totalSessions);
+
+            let familyStats = JSON.parse(localStorage.getItem('gymFamilyStats') || '{}');
+            activeParticipants.forEach(p => {
+                let count = personalExos[p].length;
+                familyStats[p] = (familyStats[p] || 0) + count;
+            });
+            localStorage.setItem('gymFamilyStats', JSON.stringify(familyStats));
+        }
+
+        // --- VOIX ET AUDIO ---
+        function populateVoiceList() {
+            if (typeof speechSynthesis === 'undefined') return;
+            voices = speechSynthesis.getVoices();
+            const voiceSelect = document.getElementById('voice-select');
+            const frVoices = voices.filter(voice => voice.lang.includes('fr'));
+            if (frVoices.length === 0) return;
+            voiceSelect.innerHTML = '';
+            let bestVoiceIndex = 0;
+            frVoices.forEach((voice, index) => {
+                const option = document.createElement('option');
+                option.textContent = `${voice.name} (${voice.lang})`;
+                option.value = index; 
+                voiceSelect.appendChild(option);
+                if (voice.name.toLowerCase().includes('google') || voice.name.toLowerCase().includes('thomas')) bestVoiceIndex = index;
+            });
+            const savedVoice = localStorage.getItem('gymVoice');
+            voiceSelect.selectedIndex = (savedVoice && frVoices[savedVoice]) ? savedVoice : bestVoiceIndex;
+            voiceSelect.onchange = () => localStorage.setItem('gymVoice', voiceSelect.selectedIndex);
+        }
+        if (typeof speechSynthesis !== 'undefined' && speechSynthesis.onvoiceschanged !== undefined) {
+            speechSynthesis.onvoiceschanged = populateVoiceList;
+        }
+
+        document.addEventListener('DOMContentLoaded', () => { loadData(); populateVoiceList(); });
+
+        async function requestWakeLock() {
+            try { if ('wakeLock' in navigator) await navigator.wakeLock.request('screen'); } catch (err) {}
+        }
+        function releaseWakeLock() {}
+
+        // --- PLEIN ÉCRAN AUTOMATIQUE ---
+        function requestFullScreen() {
+            let docElm = document.documentElement;
+            if (docElm.requestFullscreen) docElm.requestFullscreen().catch(err => console.log(err));
+            else if (docElm.webkitRequestFullScreen) docElm.webkitRequestFullScreen().catch(err => console.log(err));
+        }
+
+        function exitFullScreen() {
+            if (document.fullscreenElement || document.webkitFullscreenElement) {
+                if (document.exitFullscreen) document.exitFullscreen();
+                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+            }
+        }
+
+        function initAudio() {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function speak(text) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel(); 
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'fr-FR'; utterance.rate = 1.1; 
+                const frVoices = voices.filter(v => v.lang.includes('fr'));
+                const selectedIndex = document.getElementById('voice-select').value;
+                if (frVoices.length > 0 && selectedIndex !== "") utterance.voice = frVoices[selectedIndex];
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        function beep(type) {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.frequency.value = (type === 'short') ? 600 : 1000;
+            gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + (type === 'short' ? 0.1 : 0.6));
+            osc.start(audioCtx.currentTime); osc.stop(audioCtx.currentTime + (type === 'short' ? 0.1 : 0.6));
+        }
+
+        function playVictorySound() {
+            if (!audioCtx) return;
+            [440, 554, 659, 880].forEach((freq, i) => {
+                const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.frequency.value = freq;
+                const startTime = audioCtx.currentTime + i * 0.15;
+                gain.gain.setValueAtTime(0, startTime);
+                gain.gain.linearRampToValueAtTime(0.5, startTime + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.5);
+                osc.start(startTime); osc.stop(startTime + 0.5);
+            });
+        }
+
+        function fireConfetti() {
+            const colors = ['#fce18a', '#ff726d', '#b48def', '#f4306d', '#0d6efd', '#198754'];
+            for (let i = 0; i < 150; i++) {
+                let confetti = document.createElement('div');
+                confetti.classList.add('confetti');
+                confetti.style.left = Math.random() * 100 + 'vw';
+                confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                confetti.style.animationDuration = (Math.random() * 3 + 2) + 's';
+                document.body.appendChild(confetti);
+                setTimeout(() => confetti.remove(), 5000);
+            }
+        }
+
+        // --- MOTEUR DE PLANIFICATION ---
+        function generateSchedule() {
+            workoutSchedule = [];
+            let sortedPersons = [...activeParticipants].sort((a, b) => personalExos[b].length - personalExos[a].length);
+            let queues = {};
+            sortedPersons.forEach(p => {
+                let list = personalExos[p];
+                let startIndex = list.indexOf(startingPoints[p]);
+                if(startIndex === -1) startIndex = 0;
+                let q = [];
+                for(let i=0; i < list.length; i++) q.push(list[(startIndex + i) % list.length]);
+                queues[p] = q;
+            });
+
+            let roundLimit = 0;
+            while (roundLimit++ < 50) {
+                let allEmpty = true;
+                for (let p of sortedPersons) if (queues[p].length > 0) allEmpty = false;
+                if (allEmpty) break; 
+
+                let currentRoundAssignments = {};
+                let usedExos = new Set();
+                
+                sortedPersons.forEach(p => {
+                    let q = queues[p];
+                    if (q.length === 0) { currentRoundAssignments[p] = "Circuit terminé 🏁"; return; }
+                    let foundIndex = -1;
+                    for (let i = 0; i < q.length; i++) {
+                        if (!usedExos.has(q[i])) { foundIndex = i; break; }
+                    }
+                    if (foundIndex !== -1) {
+                        let exo = q.splice(foundIndex, 1)[0]; 
+                        currentRoundAssignments[p] = exo; usedExos.add(exo);
+                    } else {
+                        currentRoundAssignments[p] = "En attente ⏳";
+                    }
+                });
+                workoutSchedule.push(currentRoundAssignments);
+            }
+            totalRounds = workoutSchedule.length; 
+        }
+
+        function renderAssignments(roundNum, titleStr) {
+            let html = `<div class="assignment-title">${titleStr}</div>`;
+            let roundData = workoutSchedule[roundNum - 1]; 
+            activeParticipants.forEach((person) => {
+                let assignedExo = roundData[person];
+                let colorStyle = assignedExo.includes("terminé") ? "color: #198754;" : (assignedExo.includes("attente") ? "color: #fd7e14;" : "");
+                html += `<div class="assignment-row"><span class="person-name">${person}</span><span>➔</span><span class="exo-name" style="${colorStyle}">${assignedExo}</span></div>`;
+            });
+            return html;
+        }
+
+        // --- MINUTEUR ---
+        function startTimer() {
+            if (activeParticipants.length === 0) { alert("Sélectionnez au moins un participant !"); return; }
+            initAudio(); 
+            requestFullScreen(); // Passage automatique en plein écran
+            requestWakeLock();
+            if ('speechSynthesis' in window) window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));
+            
+            workDuration = parseInt(document.getElementById('work').value) || 60;
+            restDuration = parseInt(document.getElementById('rest').value) || 15;
+            localStorage.setItem('gymWork', workDuration); localStorage.setItem('gymRest', restDuration);
+            
+            sessionStartTime = new Date();
+            generateSchedule();
+            
+            document.getElementById('setup-wrapper').style.display = 'none';
+            document.getElementById('timer-container').style.display = 'flex';
+            document.getElementById('progress-container').style.display = 'block';
+            
+            isPaused = false; currentRound = 1; startPrep();
+        }
+
+        function startPrep() {
+            state = 'prep'; totalTimePhase = 10; timeLeft = totalTimePhase;
+            document.getElementById('assignments-display').innerHTML = renderAssignments(1, "ATELIERS DE DÉPART");
+            speak("Préparez-vous"); updateUI("PRÉPAREZ-VOUS", "state-prep"); runCountdown();
+        }
+
+        function startWork() {
+            state = 'work'; totalTimePhase = workDuration; timeLeft = totalTimePhase;
+            document.getElementById('assignments-display').innerHTML = renderAssignments(currentRound, "EN COURS");
+            speak("C'est parti !"); beep('long'); updateUI("DÉMARREZ !", "state-work");
+        }
+
+        function startRest() {
+            state = 'rest'; totalTimePhase = restDuration; timeLeft = totalTimePhase;
+            let nextRound = currentRound + 1;
+            if (nextRound <= totalRounds) {
+                document.getElementById('assignments-display').innerHTML = renderAssignments(nextRound, "PROCHAINE ROTATION :");
+            }
+            speak("Repos"); updateUI("REPOS", "state-rest");
+        }
+
+        function finish() {
+            state = 'done'; clearInterval(timerInterval);
+            
+            recordSessionStats();
+            let durationMin = Math.round((new Date() - sessionStartTime) / 60000);
+            if (durationMin < 1) durationMin = 1;
+
+            speak("Entraînement terminé, bravo à tous !");
+            playVictorySound(); fireConfetti(); 
+
+            let bilanHtml = `<div class="assignment-title" style="font-size:1.4rem; color:yellow;">BILAN DE SÉANCE 🌟</div>`;
+            bilanHtml += `<div style="text-align:center; margin-bottom:1rem; font-size:1.1rem;">⏱️ Durée totale : ${durationMin} minute(s)</div>`;
+            activeParticipants.forEach(p => {
+                bilanHtml += `<div class="assignment-row"><span class="person-name">${p}</span><span>➔</span><span class="exo-name">${personalExos[p].length} ateliers validés ✅</span></div>`;
+            });
+            document.getElementById('assignments-display').innerHTML = bilanHtml;
+
+            updateUI("TERMINÉ", "state-done");
+            document.getElementById('time').innerText = "🎉";
+            document.getElementById('sets').style.display = 'none';
+            document.getElementById('control-panel').style.display = 'none';
+            document.getElementById('progress-bar').style.width = '0%';
+        }
+
+        function updateUI(statusText, className) {
+            document.body.className = className;
+            document.getElementById('status').innerText = statusText;
+            document.getElementById('sets').style.display = 'block';
+            document.getElementById('sets').innerText = `Série ${currentRound} / ${totalRounds}`;
+            updateTimeDisplay(); updateProgressBar();
+        }
+
+        function updateTimeDisplay() {
+            let m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
+            let s = (timeLeft % 60).toString().padStart(2, '0');
+            if (state !== 'done') document.getElementById('time').innerText = `${m}:${s}`;
+        }
+
+        function updateProgressBar() {
+            let percentage = (timeLeft / totalTimePhase) * 100;
+            document.getElementById('progress-bar').style.width = `${percentage}%`;
+        }
+
+        function togglePause() {
+            if (state === 'done') return;
+            isPaused = !isPaused;
+            const pauseBtn = document.getElementById('pauseBtn');
+            if (isPaused) {
+                clearInterval(timerInterval); pauseBtn.innerText = "REPRENDRE";
+                document.getElementById('status').innerText = "EN PAUSE"; speak("Pause");
+            } else {
+                pauseBtn.innerText = "PAUSE";
+                if (state === 'prep') document.getElementById('status').innerText = "PRÉPAREZ-VOUS";
+                if (state === 'work') document.getElementById('status').innerText = "DÉMARREZ !";
+                if (state === 'rest') document.getElementById('status').innerText = "REPOS";
+                runCountdown();
+            }
+        }
+
+        function resetCurrentTime() {
+            if (state === 'done') return;
+            timeLeft = totalTimePhase; updateTimeDisplay(); updateProgressBar();
+        }
+
+        function backToSetup() {
+            clearInterval(timerInterval);
+            exitFullScreen(); // Sortie du mode plein écran
+            document.querySelectorAll('.confetti').forEach(el => el.remove());
+            if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+            document.body.className = '';
+            document.getElementById('setup-wrapper').style.display = 'flex';
+            document.getElementById('timer-container').style.display = 'none';
+            document.getElementById('progress-container').style.display = 'none';
+        }
+
+        function runCountdown() {
+            clearInterval(timerInterval);
+            updateTimeDisplay(); updateProgressBar();
+            
+            timerInterval = setInterval(() => {
+                if (isPaused) return;
+                timeLeft--; updateProgressBar();
+                
+                if (timeLeft > 0 && timeLeft <= 3 && (state === 'prep' || state === 'rest' || state === 'work')) {
+                    speak(timeLeft.toString()); beep('short'); 
+                } else if (state === 'work' && timeLeft > 3) {
+                    let elapsed = totalTimePhase - timeLeft;
+                    let q1 = Math.round(totalTimePhase * 0.25), q2 = Math.round(totalTimePhase * 0.50), q3 = Math.round(totalTimePhase * 0.75);
+                    if (elapsed === q1 || elapsed === q2 || elapsed === q3) speak(elapsed.toString());
+                }
+                
+                if (timeLeft <= 0) {
+                    if (state === 'prep') startWork();
+                    else if (state === 'work') { if (currentRound < totalRounds) startRest(); else finish(); }
+                    else if (state === 'rest') { currentRound++; startWork(); }
+                } else {
+                    updateTimeDisplay();
+                }
+            }, 1000);
+        }
+    </script>
+</body>
+</html>
