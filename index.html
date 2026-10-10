@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Minuteur Gym Famille</title>
+    <meta name="theme-color" content="#0d6efd">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="icon.png">
+    <link rel="apple-touch-icon" href="icon.png">
     <style>
         body { 
             margin: 0; 
@@ -13,6 +17,7 @@
             align-items: center; 
             justify-content: center; 
             min-height: 100vh; 
+            min-height: 100dvh; 
             background-color: #f8f9fa; 
             transition: background-color 0.2s, color 0.2s; 
             color: #333;
@@ -141,7 +146,7 @@
         .btn-back { background: transparent; text-decoration: underline; border: none; color: inherit; margin-top: 2rem; margin-bottom: 2rem; font-size: 1rem; opacity: 0.8; font-weight: normal; cursor: pointer;}
 
         #progress-container { display: none; position: fixed; bottom: 0; left: 0; width: 100%; height: 20px; background: rgba(0, 0, 0, 0.2); z-index: 20;}
-        #progress-bar { height: 100%; width: 100%; background: rgba(255, 255, 255, 0.9); transition: width 1s linear; }
+        #progress-bar { height: 100%; width: 100%; background: rgba(255, 255, 255, 0.9); transition: width 0.2s linear; }
 
         .confetti {
             position: fixed; top: -15px; width: 12px; height: 12px; z-index: 9999; pointer-events: none; animation: fall linear forwards;
@@ -242,37 +247,66 @@
 
     <script>
         const ALL_EXOS = [
-            "Gainage", "Chaise (élast. noire)", "Abdos (levée jambes)", "Bras (élast. bleu clair)", 
-            "Jambes (élast. bleu foncé)", "Abdos (crunch)", "Fentes", "Fessiers (élast. noire)", 
+            "Gainage", "Chaise (élast. noire)", "Abdos (levée jambes)", "Bras (élast. bleu clair)",
+            "Jambes (élast. bleu foncé)", "Abdos (crunch)", "Fentes", "Fessiers (élast. noire)",
             "Mollets (marchepieds)", "Pompes"
         ];
+        // La liste des prénoms vient des boutons de la page : une seule source à modifier.
+        const NAMES = Array.from(document.querySelectorAll('#names-container .select-btn')).map(el => el.getAttribute('data-val'));
+        const PREP_DURATION = 10;
 
         let workDuration, restDuration, totalRounds;
         let currentRound = 1;
         let timeLeft = 0;
-        let totalTimePhase = 1; 
-        let state = 'setup'; 
+        let totalTimePhase = 1;
+        let state = 'setup';
         let timerInterval;
+        let phaseEnd = 0;        // heure (ms) de fin de la phase en cours
+        let pausedMsLeft = 0;    // temps restant mémorisé pendant une pause
         let audioCtx;
         let isPaused = false;
-        let wakeLock = null; 
+        let wakeLock = null;
         let voices = [];
         let sessionStartTime = null;
 
         let activeParticipants = [];
-        let personalExos = {}; 
-        let startingPoints = {}; 
-        let workoutSchedule = []; 
+        let personalExos = {};
+        let startingPoints = {};
+        let workoutSchedule = [];
+
+        // --- STOCKAGE (tolérant aux données absentes ou abîmées) ---
+        function readStore(key, fallback) {
+            try {
+                const raw = localStorage.getItem(key);
+                if (raw === null) return fallback;
+                const value = JSON.parse(raw);
+                return (value === null || value === undefined) ? fallback : value;
+            } catch (e) { return fallback; }
+        }
+        function save(key, value) {
+            try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+        }
+        function isPlainObject(o) { return o !== null && typeof o === 'object' && !Array.isArray(o); }
+
+        // Garantit que chaque participant actif a une liste d'exercices valide et un point de départ valide.
+        function ensurePrograms() {
+            activeParticipants.forEach((person, index) => {
+                let list = Array.isArray(personalExos[person]) ? personalExos[person] : [];
+                list = ALL_EXOS.filter(e => list.includes(e));
+                if (list.length === 0) list = [...ALL_EXOS];
+                personalExos[person] = list;
+                if (!list.includes(startingPoints[person])) startingPoints[person] = list[index % list.length];
+            });
+            save('gymPersonalExos', personalExos);
+            save('gymStartingPoints', startingPoints);
+        }
 
         function toggleParticipant(element) {
             element.classList.toggle('selected');
             let selectedEls = document.querySelectorAll('#names-container .select-btn.selected');
             activeParticipants = Array.from(selectedEls).map(el => el.getAttribute('data-val'));
-            localStorage.setItem('gymParticipants', JSON.stringify(activeParticipants));
-            
-            activeParticipants.forEach(person => {
-                if (!personalExos[person]) personalExos[person] = [...ALL_EXOS];
-            });
+            save('gymParticipants', activeParticipants);
+            ensurePrograms();
             renderPersonalPrograms();
         }
 
@@ -283,24 +317,19 @@
                 list = list.filter(e => e !== exo);
                 btnElement.classList.remove('selected');
             } else {
-                let newList = [];
-                ALL_EXOS.forEach(e => { if (list.includes(e) || e === exo) newList.push(e); });
-                list = newList;
+                list = ALL_EXOS.filter(e => list.includes(e) || e === exo);
                 btnElement.classList.add('selected');
             }
             personalExos[person] = list;
-            localStorage.setItem('gymPersonalExos', JSON.stringify(personalExos));
-
-            if (!list.includes(startingPoints[person])) {
-                startingPoints[person] = list[0];
-                localStorage.setItem('gymStartingPoints', JSON.stringify(startingPoints));
-            }
+            if (!list.includes(startingPoints[person])) startingPoints[person] = list[0];
+            save('gymPersonalExos', personalExos);
+            save('gymStartingPoints', startingPoints);
             updateStartSelect(person);
         }
 
         function changeStartingPoint(person, exo) {
             startingPoints[person] = exo;
-            localStorage.setItem('gymStartingPoints', JSON.stringify(startingPoints));
+            save('gymStartingPoints', startingPoints);
         }
 
         function renderPersonalPrograms() {
@@ -311,7 +340,7 @@
                 return;
             }
 
-            activeParticipants.forEach((person, index) => {
+            activeParticipants.forEach((person) => {
                 let card = document.createElement('div');
                 card.className = 'person-card';
                 let title = document.createElement('h4');
@@ -339,15 +368,11 @@
                 select.className = 'start-point-select';
                 select.id = `start-select-${person}`;
                 select.onchange = (e) => changeStartingPoint(person, e.target.value);
-                
+
                 startRow.appendChild(startLabel);
                 startRow.appendChild(select);
                 card.appendChild(startRow);
                 container.appendChild(card);
-                
-                if (!startingPoints[person] || !personalExos[person].includes(startingPoints[person])) {
-                    startingPoints[person] = personalExos[person][index % personalExos[person].length];
-                }
                 updateStartSelect(person);
             });
         }
@@ -365,24 +390,23 @@
         }
 
         function loadData() {
-            if (localStorage.getItem('gymWork')) document.getElementById('work').value = localStorage.getItem('gymWork');
-            if (localStorage.getItem('gymRest')) document.getElementById('rest').value = localStorage.getItem('gymRest');
-            
-            let savedPE = localStorage.getItem('gymPersonalExos');
-            if (savedPE) personalExos = JSON.parse(savedPE);
-            let savedSP = localStorage.getItem('gymStartingPoints');
-            if (savedSP) startingPoints = JSON.parse(savedSP);
+            const savedWork = parseInt(readStore('gymWork', NaN), 10);
+            if (savedWork >= 1) document.getElementById('work').value = savedWork;
+            const savedRest = parseInt(readStore('gymRest', NaN), 10);
+            if (savedRest >= 0) document.getElementById('rest').value = savedRest;
 
-            let savedP = localStorage.getItem('gymParticipants');
-            if (savedP) {
-                activeParticipants = JSON.parse(savedP);
-                document.querySelectorAll('#names-container .select-btn').forEach(el => {
-                    if (activeParticipants.includes(el.getAttribute('data-val'))) el.classList.add('selected');
-                });
-            } else {
-                let defaultP = document.querySelector('#names-container .select-btn[data-val="Olivier"]');
-                if(defaultP) { defaultP.classList.add('selected'); activeParticipants = ["Olivier"]; personalExos["Olivier"] = [...ALL_EXOS]; }
-            }
+            const savedPE = readStore('gymPersonalExos', {});
+            personalExos = isPlainObject(savedPE) ? savedPE : {};
+            const savedSP = readStore('gymStartingPoints', {});
+            startingPoints = isPlainObject(savedSP) ? savedSP : {};
+
+            const savedP = readStore('gymParticipants', null);
+            // On garde l'ordre des boutons et on ignore tout prénom inconnu.
+            activeParticipants = Array.isArray(savedP) ? NAMES.filter(n => savedP.includes(n)) : ["Olivier"].filter(n => NAMES.includes(n));
+            document.querySelectorAll('#names-container .select-btn').forEach(el => {
+                el.classList.toggle('selected', activeParticipants.includes(el.getAttribute('data-val')));
+            });
+            ensurePrograms();
             renderPersonalPrograms();
         }
 
@@ -390,15 +414,16 @@
         function openStatsModal() {
             const modal = document.getElementById('stats-modal');
             const body = document.getElementById('stats-body');
-            
-            let totalSessions = parseInt(localStorage.getItem('gymTotalSessions') || '0');
-            let familyStats = JSON.parse(localStorage.getItem('gymFamilyStats') || '{}');
+
+            let totalSessions = parseInt(readStore('gymTotalSessions', 0), 10) || 0;
+            let familyStats = readStore('gymFamilyStats', {});
+            if (!isPlainObject(familyStats)) familyStats = {};
 
             let html = `<div class="stat-line"><span>Séances totales :</span> <strong>${totalSessions}</strong></div>`;
             html += `<h3 style="margin-top:1.5rem; color:#333; font-size:1.1rem;">Exercices cumulés par personne :</h3>`;
-            
-            ["Olivier", "Christelle", "Julia", "Coline", "Romain"].forEach(name => {
-                let count = familyStats[name] || 0;
+
+            NAMES.forEach(name => {
+                let count = parseInt(familyStats[name], 10) || 0;
                 html += `<div class="stat-line"><span>${name}</span> <strong>${count} ateliers</strong></div>`;
             });
 
@@ -409,79 +434,127 @@
         function closeStatsModal() {
             document.getElementById('stats-modal').style.display = 'none';
         }
+        // Un clic sur le fond sombre ferme aussi la fenêtre.
+        document.getElementById('stats-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'stats-modal') closeStatsModal();
+        });
 
         function recordSessionStats() {
-            let totalSessions = parseInt(localStorage.getItem('gymTotalSessions') || '0') + 1;
-            localStorage.setItem('gymTotalSessions', totalSessions);
+            let totalSessions = (parseInt(readStore('gymTotalSessions', 0), 10) || 0) + 1;
+            save('gymTotalSessions', totalSessions);
 
-            let familyStats = JSON.parse(localStorage.getItem('gymFamilyStats') || '{}');
+            let familyStats = readStore('gymFamilyStats', {});
+            if (!isPlainObject(familyStats)) familyStats = {};
             activeParticipants.forEach(p => {
-                let count = personalExos[p].length;
-                familyStats[p] = (familyStats[p] || 0) + count;
+                familyStats[p] = (parseInt(familyStats[p], 10) || 0) + personalExos[p].length;
             });
-            localStorage.setItem('gymFamilyStats', JSON.stringify(familyStats));
+            save('gymFamilyStats', familyStats);
         }
 
         // --- VOIX ET AUDIO ---
+        function frenchVoices() {
+            return voices.filter(v => v.lang && v.lang.toLowerCase().replace('_', '-').startsWith('fr'));
+        }
+
         function populateVoiceList() {
-            if (typeof speechSynthesis === 'undefined') return;
-            voices = speechSynthesis.getVoices();
             const voiceSelect = document.getElementById('voice-select');
-            const frVoices = voices.filter(voice => voice.lang.includes('fr'));
-            if (frVoices.length === 0) return;
+            const setSingleOption = (label) => {
+                voiceSelect.innerHTML = '';
+                const option = document.createElement('option');
+                option.value = ''; option.textContent = label;
+                voiceSelect.appendChild(option);
+            };
+            if (!('speechSynthesis' in window)) { setSingleOption('Voix indisponible sur cet appareil'); return; }
+
+            voices = speechSynthesis.getVoices();
+            const frVoices = frenchVoices();
+            if (frVoices.length === 0) { setSingleOption('Voix par défaut'); return; }
+
+            // La voix est mémorisée par son nom : l'ordre de la liste change d'un appareil à l'autre.
+            const savedName = readStore('gymVoiceName', null);
+            const best = frVoices.find(v => v.name === savedName)
+                || frVoices.find(v => /google|thomas/i.test(v.name))
+                || frVoices[0];
+
             voiceSelect.innerHTML = '';
-            let bestVoiceIndex = 0;
-            frVoices.forEach((voice, index) => {
+            frVoices.forEach(voice => {
                 const option = document.createElement('option');
                 option.textContent = `${voice.name} (${voice.lang})`;
-                option.value = index; 
+                option.value = voice.name;
                 voiceSelect.appendChild(option);
-                if (voice.name.toLowerCase().includes('google') || voice.name.toLowerCase().includes('thomas')) bestVoiceIndex = index;
             });
-            const savedVoice = localStorage.getItem('gymVoice');
-            voiceSelect.selectedIndex = (savedVoice && frVoices[savedVoice]) ? savedVoice : bestVoiceIndex;
-            voiceSelect.onchange = () => localStorage.setItem('gymVoice', voiceSelect.selectedIndex);
+            voiceSelect.value = best.name;
         }
-        if (typeof speechSynthesis !== 'undefined' && speechSynthesis.onvoiceschanged !== undefined) {
-            speechSynthesis.onvoiceschanged = populateVoiceList;
+        document.getElementById('voice-select').addEventListener('change', (e) => {
+            if (e.target.value) save('gymVoiceName', e.target.value);
+        });
+        if ('speechSynthesis' in window) {
+            if (typeof speechSynthesis.addEventListener === 'function') speechSynthesis.addEventListener('voiceschanged', populateVoiceList);
+            else speechSynthesis.onvoiceschanged = populateVoiceList;
         }
 
-        document.addEventListener('DOMContentLoaded', () => { loadData(); populateVoiceList(); });
+        loadData();
+        populateVoiceList();
 
+        // --- ÉCRAN TOUJOURS ALLUMÉ ---
         async function requestWakeLock() {
-            try { if ('wakeLock' in navigator) await navigator.wakeLock.request('screen'); } catch (err) {}
+            if (!('wakeLock' in navigator) || wakeLock) return;
+            try {
+                const lock = await navigator.wakeLock.request('screen');
+                wakeLock = lock;
+                lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; });
+            } catch (err) {}
         }
-        function releaseWakeLock() {}
+        function releaseWakeLock() {
+            if (!wakeLock) return;
+            const lock = wakeLock; wakeLock = null;
+            lock.release().catch(() => {});
+        }
+        function sessionRunning() { return state === 'prep' || state === 'work' || state === 'rest'; }
+        // Le navigateur relâche le verrou dès que l'onglet est masqué : on le reprend au retour.
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && sessionRunning()) { requestWakeLock(); tick(); }
+        });
 
         // --- PLEIN ÉCRAN AUTOMATIQUE ---
         function requestFullScreen() {
-            let docElm = document.documentElement;
-            if (docElm.requestFullscreen) docElm.requestFullscreen().catch(err => console.log(err));
-            else if (docElm.webkitRequestFullScreen) docElm.webkitRequestFullScreen().catch(err => console.log(err));
+            const el = document.documentElement;
+            const request = el.requestFullscreen || el.webkitRequestFullscreen || el.webkitRequestFullScreen;
+            if (!request) return; // iPhone : pas de plein écran, on continue sans
+            try {
+                const result = request.call(el);
+                if (result && typeof result.catch === 'function') result.catch(() => {});
+            } catch (err) {}
         }
 
         function exitFullScreen() {
-            if (document.fullscreenElement || document.webkitFullscreenElement) {
-                if (document.exitFullscreen) document.exitFullscreen();
-                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-            }
+            if (!(document.fullscreenElement || document.webkitFullscreenElement)) return;
+            const exit = document.exitFullscreen || document.webkitExitFullscreen;
+            if (!exit) return;
+            try {
+                const result = exit.call(document);
+                if (result && typeof result.catch === 'function') result.catch(() => {});
+            } catch (err) {}
         }
 
         function initAudio() {
-            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            if (audioCtx.state === 'suspended') audioCtx.resume();
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+            } catch (err) { audioCtx = null; }
         }
 
         function speak(text) {
-            if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel(); 
+            if (!('speechSynthesis' in window)) return;
+            try {
+                window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(text);
-                utterance.lang = 'fr-FR'; utterance.rate = 1.1; 
-                const frVoices = voices.filter(v => v.lang.includes('fr'));
-                const selectedIndex = document.getElementById('voice-select').value;
-                if (frVoices.length > 0 && selectedIndex !== "") utterance.voice = frVoices[selectedIndex];
+                utterance.lang = 'fr-FR'; utterance.rate = 1.1;
+                const selectedName = document.getElementById('voice-select').value;
+                const voice = selectedName ? frenchVoices().find(v => v.name === selectedName) : null;
+                if (voice) utterance.voice = voice;
                 window.speechSynthesis.speak(utterance);
-            }
+            } catch (err) {}
         }
 
         function beep(type) {
@@ -518,7 +591,7 @@
                 confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
                 confetti.style.animationDuration = (Math.random() * 3 + 2) + 's';
                 document.body.appendChild(confetti);
-                setTimeout(() => confetti.remove(), 5000);
+                setTimeout(() => confetti.remove(), 5500);
             }
         }
 
@@ -536,24 +609,17 @@
                 queues[p] = q;
             });
 
-            let roundLimit = 0;
-            while (roundLimit++ < 50) {
-                let allEmpty = true;
-                for (let p of sortedPersons) if (queues[p].length > 0) allEmpty = false;
-                if (allEmpty) break; 
-
+            // Chaque tour attribue au moins un exercice, donc la boucle se termine toujours.
+            while (sortedPersons.some(p => queues[p].length > 0)) {
                 let currentRoundAssignments = {};
                 let usedExos = new Set();
-                
+
                 sortedPersons.forEach(p => {
                     let q = queues[p];
                     if (q.length === 0) { currentRoundAssignments[p] = "Circuit terminé 🏁"; return; }
-                    let foundIndex = -1;
-                    for (let i = 0; i < q.length; i++) {
-                        if (!usedExos.has(q[i])) { foundIndex = i; break; }
-                    }
+                    let foundIndex = q.findIndex(exo => !usedExos.has(exo));
                     if (foundIndex !== -1) {
-                        let exo = q.splice(foundIndex, 1)[0]; 
+                        let exo = q.splice(foundIndex, 1)[0];
                         currentRoundAssignments[p] = exo; usedExos.add(exo);
                     } else {
                         currentRoundAssignments[p] = "En attente ⏳";
@@ -561,12 +627,12 @@
                 });
                 workoutSchedule.push(currentRoundAssignments);
             }
-            totalRounds = workoutSchedule.length; 
+            totalRounds = workoutSchedule.length;
         }
 
         function renderAssignments(roundNum, titleStr) {
             let html = `<div class="assignment-title">${titleStr}</div>`;
-            let roundData = workoutSchedule[roundNum - 1]; 
+            let roundData = workoutSchedule[roundNum - 1];
             activeParticipants.forEach((person) => {
                 let assignedExo = roundData[person];
                 let colorStyle = assignedExo.includes("terminé") ? "color: #198754;" : (assignedExo.includes("attente") ? "color: #fd7e14;" : "");
@@ -578,58 +644,75 @@
         // --- MINUTEUR ---
         function startTimer() {
             if (activeParticipants.length === 0) { alert("Sélectionnez au moins un participant !"); return; }
-            initAudio(); 
-            requestFullScreen(); // Passage automatique en plein écran
-            requestWakeLock();
-            if ('speechSynthesis' in window) window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));
-            
-            workDuration = parseInt(document.getElementById('work').value) || 60;
-            restDuration = parseInt(document.getElementById('rest').value) || 15;
-            localStorage.setItem('gymWork', workDuration); localStorage.setItem('gymRest', restDuration);
-            
-            sessionStartTime = new Date();
+
+            // Une pause à 0 est permise (enchaînement direct) ; une valeur invalide revient au défaut.
+            const w = parseInt(document.getElementById('work').value, 10);
+            const r = parseInt(document.getElementById('rest').value, 10);
+            workDuration = (w >= 1) ? w : 60;
+            restDuration = (r >= 0) ? r : 15;
+            document.getElementById('work').value = workDuration;
+            document.getElementById('rest').value = restDuration;
+            save('gymWork', workDuration); save('gymRest', restDuration);
+
+            initAudio();
+            requestFullScreen();
+            // Débloque la synthèse vocale sur mobile (doit partir d'un geste de l'utilisateur).
+            try { if ('speechSynthesis' in window) window.speechSynthesis.speak(new SpeechSynthesisUtterance('')); } catch (err) {}
+
+            sessionStartTime = Date.now();
+            ensurePrograms();
             generateSchedule();
-            
+
             document.getElementById('setup-wrapper').style.display = 'none';
             document.getElementById('timer-container').style.display = 'flex';
             document.getElementById('progress-container').style.display = 'block';
-            
-            isPaused = false; currentRound = 1; startPrep();
+            // Remet l'écran du minuteur à neuf (après une séance terminée ou quittée en pause).
+            document.getElementById('control-panel').style.display = '';
+            document.getElementById('pauseBtn').innerText = "PAUSE";
+
+            isPaused = false; currentRound = 1; phaseEnd = 0;
+            startPrep();
+            requestWakeLock();
+        }
+
+        // Démarre une phase. On enchaîne sur la fin théorique de la précédente pour ne pas accumuler de retard.
+        function beginPhase(newState, duration) {
+            const now = Date.now();
+            const base = (phaseEnd && Math.abs(now - phaseEnd) < 1000) ? phaseEnd : now;
+            state = newState; totalTimePhase = duration; timeLeft = duration;
+            phaseEnd = base + duration * 1000;
         }
 
         function startPrep() {
-            state = 'prep'; totalTimePhase = 10; timeLeft = totalTimePhase;
+            beginPhase('prep', PREP_DURATION);
             document.getElementById('assignments-display').innerHTML = renderAssignments(1, "ATELIERS DE DÉPART");
             speak("Préparez-vous"); updateUI("PRÉPAREZ-VOUS", "state-prep"); runCountdown();
         }
 
         function startWork() {
-            state = 'work'; totalTimePhase = workDuration; timeLeft = totalTimePhase;
+            beginPhase('work', workDuration);
             document.getElementById('assignments-display').innerHTML = renderAssignments(currentRound, "EN COURS");
             speak("C'est parti !"); beep('long'); updateUI("DÉMARREZ !", "state-work");
         }
 
         function startRest() {
-            state = 'rest'; totalTimePhase = restDuration; timeLeft = totalTimePhase;
-            let nextRound = currentRound + 1;
-            if (nextRound <= totalRounds) {
-                document.getElementById('assignments-display').innerHTML = renderAssignments(nextRound, "PROCHAINE ROTATION :");
-            }
+            beginPhase('rest', restDuration);
+            document.getElementById('assignments-display').innerHTML = renderAssignments(currentRound + 1, "PROCHAINE ROTATION :");
             speak("Repos"); updateUI("REPOS", "state-rest");
         }
 
         function finish() {
             state = 'done'; clearInterval(timerInterval);
-            
+            releaseWakeLock();
+
             recordSessionStats();
-            let durationMin = Math.round((new Date() - sessionStartTime) / 60000);
-            if (durationMin < 1) durationMin = 1;
+            let durationMin = Math.max(1, Math.round((Date.now() - sessionStartTime) / 60000));
 
             speak("Entraînement terminé, bravo à tous !");
-            playVictorySound(); fireConfetti(); 
+            playVictorySound(); fireConfetti();
 
             let bilanHtml = `<div class="assignment-title" style="font-size:1.4rem; color:yellow;">BILAN DE SÉANCE 🌟</div>`;
-            bilanHtml += `<div style="text-align:center; margin-bottom:1rem; font-size:1.1rem;">⏱️ Durée totale : ${durationMin} minute(s)</div>`;
+            bilanHtml += `<div style="text-align:center; margin-bottom:1rem; font-size:1.1rem;">⏱️ Durée totale : ${durationMin} minute${durationMin > 1 ? 's' : ''}</div>`;
             activeParticipants.forEach(p => {
                 bilanHtml += `<div class="assignment-row"><span class="person-name">${p}</span><span>➔</span><span class="exo-name">${personalExos[p].length} ateliers validés ✅</span></div>`;
             });
@@ -657,37 +740,49 @@
         }
 
         function updateProgressBar() {
-            let percentage = (timeLeft / totalTimePhase) * 100;
+            const total = totalTimePhase * 1000;
+            const msLeft = isPaused ? pausedMsLeft : (phaseEnd - Date.now());
+            const percentage = total > 0 ? Math.min(100, Math.max(0, (msLeft / total) * 100)) : 0;
             document.getElementById('progress-bar').style.width = `${percentage}%`;
         }
 
+        function statusLabel() {
+            return { prep: "PRÉPAREZ-VOUS", work: "DÉMARREZ !", rest: "REPOS" }[state] || "";
+        }
+
         function togglePause() {
-            if (state === 'done') return;
+            if (!sessionRunning()) return;
             isPaused = !isPaused;
             const pauseBtn = document.getElementById('pauseBtn');
             if (isPaused) {
+                pausedMsLeft = Math.max(0, phaseEnd - Date.now());
                 clearInterval(timerInterval); pauseBtn.innerText = "REPRENDRE";
                 document.getElementById('status').innerText = "EN PAUSE"; speak("Pause");
             } else {
                 pauseBtn.innerText = "PAUSE";
-                if (state === 'prep') document.getElementById('status').innerText = "PRÉPAREZ-VOUS";
-                if (state === 'work') document.getElementById('status').innerText = "DÉMARREZ !";
-                if (state === 'rest') document.getElementById('status').innerText = "REPOS";
+                document.getElementById('status').innerText = statusLabel();
+                phaseEnd = Date.now() + pausedMsLeft; // on repart exactement d'où on s'était arrêté
                 runCountdown();
             }
         }
 
         function resetCurrentTime() {
-            if (state === 'done') return;
-            timeLeft = totalTimePhase; updateTimeDisplay(); updateProgressBar();
+            if (!sessionRunning()) return;
+            timeLeft = totalTimePhase;
+            pausedMsLeft = totalTimePhase * 1000;
+            phaseEnd = Date.now() + totalTimePhase * 1000;
+            updateTimeDisplay(); updateProgressBar();
         }
 
         function backToSetup() {
             clearInterval(timerInterval);
-            exitFullScreen(); // Sortie du mode plein écran
+            state = 'setup'; isPaused = false;
+            releaseWakeLock();
+            exitFullScreen();
             document.querySelectorAll('.confetti').forEach(el => el.remove());
             if ('speechSynthesis' in window) window.speechSynthesis.cancel();
             document.body.className = '';
+            document.getElementById('pauseBtn').innerText = "PAUSE";
             document.getElementById('setup-wrapper').style.display = 'flex';
             document.getElementById('timer-container').style.display = 'none';
             document.getElementById('progress-container').style.display = 'none';
@@ -696,27 +791,37 @@
         function runCountdown() {
             clearInterval(timerInterval);
             updateTimeDisplay(); updateProgressBar();
-            
-            timerInterval = setInterval(() => {
-                if (isPaused) return;
-                timeLeft--; updateProgressBar();
-                
-                if (timeLeft > 0 && timeLeft <= 3 && (state === 'prep' || state === 'rest' || state === 'work')) {
-                    speak(timeLeft.toString()); beep('short'); 
-                } else if (state === 'work' && timeLeft > 3) {
-                    let elapsed = totalTimePhase - timeLeft;
-                    let q1 = Math.round(totalTimePhase * 0.25), q2 = Math.round(totalTimePhase * 0.50), q3 = Math.round(totalTimePhase * 0.75);
-                    if (elapsed === q1 || elapsed === q2 || elapsed === q3) speak(elapsed.toString());
+            timerInterval = setInterval(tick, 200);
+        }
+
+        // Le temps restant est recalculé à partir de l'horloge : pas de dérive, même si
+        // le navigateur ralentit la page (onglet en arrière-plan, téléphone verrouillé).
+        function tick() {
+            if (isPaused || !sessionRunning()) return;
+            updateProgressBar();
+            const newLeft = Math.max(0, Math.ceil((phaseEnd - Date.now()) / 1000));
+            if (newLeft === timeLeft) return;
+            timeLeft = newLeft;
+
+            if (timeLeft > 0 && timeLeft <= 3) {
+                speak(timeLeft.toString()); beep('short');
+            } else if (state === 'work' && timeLeft > 3) {
+                let elapsed = totalTimePhase - timeLeft;
+                let q1 = Math.round(totalTimePhase * 0.25), q2 = Math.round(totalTimePhase * 0.50), q3 = Math.round(totalTimePhase * 0.75);
+                if (elapsed === q1 || elapsed === q2 || elapsed === q3) speak(elapsed.toString());
+            }
+
+            if (timeLeft <= 0) {
+                if (state === 'prep') startWork();
+                else if (state === 'work') {
+                    if (currentRound >= totalRounds) finish();
+                    else if (restDuration > 0) startRest();
+                    else { currentRound++; startWork(); }
                 }
-                
-                if (timeLeft <= 0) {
-                    if (state === 'prep') startWork();
-                    else if (state === 'work') { if (currentRound < totalRounds) startRest(); else finish(); }
-                    else if (state === 'rest') { currentRound++; startWork(); }
-                } else {
-                    updateTimeDisplay();
-                }
-            }, 1000);
+                else if (state === 'rest') { currentRound++; startWork(); }
+            } else {
+                updateTimeDisplay();
+            }
         }
     </script>
 </body>
