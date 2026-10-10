@@ -289,13 +289,22 @@
         function isPlainObject(o) { return o !== null && typeof o === 'object' && !Array.isArray(o); }
 
         // Garantit que chaque participant actif a une liste d'exercices valide et un point de départ valide.
-        function ensurePrograms() {
-            activeParticipants.forEach((person, index) => {
+        // Un atelier = une seule personne : deux participants ne peuvent pas démarrer au même endroit.
+        // "newcomer" (facultatif) est servi en dernier, pour ne pas déplacer les choix déjà faits par les autres.
+        function ensurePrograms(newcomer) {
+            const order = activeParticipants.filter(p => p !== newcomer);
+            if (activeParticipants.includes(newcomer)) order.push(newcomer);
+            const taken = new Set();
+            order.forEach(person => {
                 let list = Array.isArray(personalExos[person]) ? personalExos[person] : [];
                 list = ALL_EXOS.filter(e => list.includes(e));
                 if (list.length === 0) list = [...ALL_EXOS];
                 personalExos[person] = list;
-                if (!list.includes(startingPoints[person])) startingPoints[person] = list[index % list.length];
+                let start = startingPoints[person];
+                // S'il ne reste aucun atelier libre dans sa liste, on garde le premier : il attendra son tour.
+                if (!list.includes(start) || taken.has(start)) start = list.find(e => !taken.has(e)) || list[0];
+                startingPoints[person] = start;
+                taken.add(start);
             });
             save('gymPersonalExos', personalExos);
             save('gymStartingPoints', startingPoints);
@@ -306,7 +315,7 @@
             let selectedEls = document.querySelectorAll('#names-container .select-btn.selected');
             activeParticipants = Array.from(selectedEls).map(el => el.getAttribute('data-val'));
             save('gymParticipants', activeParticipants);
-            ensurePrograms();
+            ensurePrograms(element.getAttribute('data-val'));
             renderPersonalPrograms();
         }
 
@@ -321,15 +330,30 @@
                 btnElement.classList.add('selected');
             }
             personalExos[person] = list;
-            if (!list.includes(startingPoints[person])) startingPoints[person] = list[0];
+            if (!list.includes(startingPoints[person])) {
+                const taken = startsTakenByOthers(person);
+                startingPoints[person] = list.find(e => !taken.has(e)) || list[0];
+            }
             save('gymPersonalExos', personalExos);
             save('gymStartingPoints', startingPoints);
-            updateStartSelect(person);
+            updateAllStartSelects();
         }
 
         function changeStartingPoint(person, exo) {
             startingPoints[person] = exo;
             save('gymStartingPoints', startingPoints);
+            updateAllStartSelects(); // le choix devient indisponible chez les autres
+        }
+
+        // Ateliers de départ déjà choisis par les autres participants : atelier -> prénom.
+        function startsTakenByOthers(person) {
+            const taken = new Map();
+            activeParticipants.forEach(p => { if (p !== person) taken.set(startingPoints[p], p); });
+            return taken;
+        }
+
+        function updateAllStartSelects() {
+            activeParticipants.forEach(updateStartSelect);
         }
 
         function renderPersonalPrograms() {
@@ -373,17 +397,23 @@
                 startRow.appendChild(select);
                 card.appendChild(startRow);
                 container.appendChild(card);
-                updateStartSelect(person);
             });
+            updateAllStartSelects();
         }
 
         function updateStartSelect(person) {
             let select = document.getElementById(`start-select-${person}`);
             if (!select) return;
             select.innerHTML = '';
+            const taken = startsTakenByOthers(person);
             personalExos[person].forEach(exo => {
                 let opt = document.createElement('option');
                 opt.value = exo; opt.innerText = exo;
+                // Atelier déjà pris comme départ par quelqu'un d'autre : grisé, avec le prénom.
+                if (taken.has(exo) && exo !== startingPoints[person]) {
+                    opt.disabled = true;
+                    opt.innerText = `${exo} (${taken.get(exo)})`;
+                }
                 select.appendChild(opt);
             });
             select.value = startingPoints[person];
